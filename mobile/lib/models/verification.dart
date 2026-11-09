@@ -39,6 +39,8 @@ class VerificationResult {
     required this.keyakinan,
     required this.catatan,
     this.dinilai = true,
+    this.tempatSama = true,
+    this.buktiTempat,
     this.pesan,
     this.skorSumbatanSesudah,
     this.aiSumber,
@@ -67,6 +69,9 @@ class VerificationResult {
     final catatan = v?['catatan'] as String? ?? '';
     return VerificationResult(
       dinilai: dinilai,
+      // Backend lama tidak mengirim field ini: anggap tempatnya sama.
+      tempatSama: v?['tempat_sama'] as bool? ?? true,
+      buktiTempat: v?['bukti_tempat'] as String?,
       // Catatan AI menjelaskan kenapa saluran tidak terlihat; catatan
       // cadangan "gagal" ditujukan ke lurah, jadi tidak dipakai di sini.
       pesan:
@@ -86,6 +91,16 @@ class VerificationResult {
 
   /// `false` kalau AI tidak memberi penilaian (lihat [VerificationResult.fromJson]).
   final bool dinilai;
+
+  /// `false` kalau AI menilai foto sesudah memperlihatkan saluran lain
+  /// (penanda tetap seperti dinding, pipa, atau pagar berbeda dari foto sebelum).
+  final bool tempatSama;
+
+  /// Penanda yang dipakai AI untuk menilai tempatnya sama atau berbeda.
+  final String? buktiTempat;
+
+  /// Saluran di foto sesudah bisa saja bersih, tapi bukan saluran yang ditugaskan.
+  bool get tempatBerbeda => dinilai && !tempatSama;
   final String? pesan;
   final bool sudahBersih;
   final KelasSumbatan kelasSesudah;

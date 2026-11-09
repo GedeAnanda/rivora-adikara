@@ -2,7 +2,8 @@ import Ikon from './Ikon'
 import { LencanaKelas, LencanaLevel } from './Lencana'
 import { JENIS, angka2, bobot, infoLevel, mm } from '../format'
 
-const lokasi = (e) => (e >= 0.67 ? 'Lokasi rendah' : e >= 0.34 ? 'Lokasi sedang' : 'Lokasi relatif tinggi')
+// Ambang sama dengan kalimat alasan backend (risk/data.js: ≥ 0,5 = lokasi rendah).
+const lokasi = (e) => (e >= 0.5 ? 'Lokasi rendah' : 'Lokasi relatif tinggi')
 
 /**
  * Panel "Kenapa skor ini?" (FR-DB-06). Angka diambil apa adanya dari properties.komponen

@@ -93,11 +93,17 @@ export default function SaluranDetail({ data, galat, onTugaskan }) {
             <div className="baris-meta">
               <LencanaKelas kelas={l.kelas} />
               {l.skor_sumbatan != null && <span className="angka">{angka2(l.skor_sumbatan)}</span>}
-              {l.sumber === 'verifikasi' && <span className="label-bukti">Bukti pembersihan</span>}
+              {l.sumber === 'verifikasi' &&
+                (l.lolos_verifikasi === false ? (
+                  <span className="label-bukti ditolak">Verifikasi ditolak</span>
+                ) : (
+                  <span className="label-bukti">Bukti pembersihan</span>
+                ))}
               <LabelDemo data={l} />
             </div>
             <p className="garis-waktu-ket">
               {tanggalWib(l.captured_at)}. {STATUS_LAPORAN[l.status] ?? l.status}. Keyakinan AI {KEYAKINAN[l.keyakinan]?.toLowerCase()}.
+              {l.sumber === 'verifikasi' && l.lolos_verifikasi === false && l.catatan && ` ${l.catatan}`}
             </p>
           </li>
         ))}

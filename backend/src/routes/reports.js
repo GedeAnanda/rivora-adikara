@@ -8,7 +8,7 @@ const multer = require('multer');
 const db = require('../db');
 const { httpError, ambilId } = require('../errors');
 const { cariAtauBuatSaluran } = require('../saluran');
-const { lokasiDemoDiminta, saluranDemo, cadanganDemo } = require('../demo');
+const { lokasiDemoDiminta, saluranDemo, petaLokasiDemo, cadanganDemo } = require('../demo');
 const { simpanFoto } = require('../storage');
 
 const router = express.Router();
@@ -205,12 +205,20 @@ router.post('/', terimaFoto, async (req, res) => {
   const lng = Number(req.body.lng);
   const capturedAt = new Date(req.body.captured_at);
 
-  // FR-BE-21 [DEMO]: pasang ke saluran DEMO_SALURAN_ID, posisi asli HP tetap disimpan
+  // FR-BE-21 [DEMO]: posisi asli HP tetap disimpan di laporan.geom.
+  // DEMO_ASAL diisi → titik digeser ke wilayah demo, lalu digabung/dibuat saluran seperti biasa
+  // (selokan berbeda = saluran berbeda). Tidak diisi → satu saluran DEMO_SALURAN_ID (perilaku lama).
   const lokasiDemo = lokasiDemoDiminta(req.body);
   const ai = dariHasilAi(await nilaiFoto(req.file.path, req.file.mimetype, jenis));
-  const saluran = lokasiDemo
-    ? { id: await saluranDemo(), baru: false }
-    : await cariAtauBuatSaluran({ lat, lng, jenis });
+  let saluran;
+  if (!lokasiDemo) {
+    saluran = await cariAtauBuatSaluran({ lat, lng, jenis });
+  } else {
+    const peta = await petaLokasiDemo({ lat, lng });
+    saluran = peta
+      ? await cariAtauBuatSaluran({ ...peta, jenis, rwTerdekat: true })
+      : { id: (await saluranDemo()).id, baru: false };
+  }
   const fotoUrl = await simpanFoto(req, req.file);
   const pelaporId = req.user ? req.user.id : null; // token opsional (FR-BE-01)
 
@@ -234,13 +242,18 @@ router.get('/:id', async (req, res) => {
   const laporan = await ambilLaporan(id);
   if (!laporan) throw httpError(404, 'Laporan tidak ditemukan');
 
-  // Tugas yang menangani laporan ini = tugas pertama di saluran yang sama yang belum selesai
-  // saat laporan dibuat (laporan gabungan ikut mendapat status & foto bukti tugas tersebut).
+  // Tugas yang menangani laporan ini, di saluran yang sama:
+  // - tugas yang dibuat lurah SESUDAH laporan ini masuk (laporan ikut ditugaskan), atau
+  // - tugas yang dibuat sebelumnya tapi SELESAI sesudah laporan ini masuk (salurannya sudah dibersihkan).
+  // Tugas aktif yang dibuat sebelum laporan ini TIDAK dihitung: laporan baru tidak boleh tampak
+  // "ditugaskan" padahal lurah belum menugaskan apa pun untuknya.
   const { rows } = await db.query(
     `SELECT t.id, t.status, p.nama AS petugas_nama, t.foto_sesudah_url, t.selesai_at,
        t.ai_verifikasi_json, lv.kelas AS kelas_verifikasi
      FROM laporan l
-     JOIN tugas t ON t.saluran_id = l.saluran_id AND (t.selesai_at IS NULL OR t.selesai_at >= l.created_at)
+     JOIN tugas t ON t.saluran_id = l.saluran_id
+       AND (t.laporan_id = l.id OR t.dibuat_at >= l.created_at
+            OR (t.status = 'selesai' AND t.selesai_at >= l.created_at))
      JOIN pengguna p ON p.id = t.petugas_id
      LEFT JOIN laporan lv ON lv.id = t.laporan_verifikasi_id
      WHERE l.id = $1 AND l.sumber = 'laporan'

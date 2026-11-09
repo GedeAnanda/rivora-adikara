@@ -157,6 +157,7 @@ class _VerifyScreenState extends State<VerifyScreen> {
     final judul = switch (_tahap) {
       _Tahap.hasil when hasil!.sudahBersih => 'Verifikasi selesai',
       _Tahap.hasil when !hasil!.dinilai => 'Belum bisa dinilai',
+      _Tahap.hasil when hasil!.tempatBerbeda => 'Tempat berbeda',
       _Tahap.hasil => 'Belum bersih',
       _ => layarSempit(context) ? 'Verifikasi' : 'Verifikasi pembersihan',
     };
@@ -409,18 +410,28 @@ class _Hasil extends StatelessWidget {
     final bersih = hasil.sudahBersih;
     final dinilai = hasil.dinilai;
     final aksen = bersih ? rv.bersih : rv.sedang;
+    final tempatBerbeda = hasil.tempatBerbeda;
     final judul = !dinilai
         ? 'AI belum bisa menilai foto'
         : bersih
         ? 'Saluran sudah bersih'
+        : tempatBerbeda
+        ? 'Foto sesudah di tempat berbeda'
         : 'Masih ada sumbatan';
     final keterangan = !dinilai
         ? (hasil.pesan ??
-              'Foto kurang jelas atau terlalu gelap. Foto ulang dari sudut '
-                  'yang sama.')
+              (hasil.aiSumber == 'gagal'
+                  ? 'Penilaian AI belum berhasil. Kirim ulang foto; kalau '
+                        'tetap gagal, lurah akan mengecek langsung.'
+                  : 'Foto kurang jelas atau terlalu gelap. Foto ulang dari '
+                        'sudut yang sama.'))
         : bersih
         ? 'AI membandingkan foto sebelum dan sesudah. Tugas tercatat selesai '
               'dan pelapor melihat foto buktinya.'
+        : tempatBerbeda
+        ? 'Saluran di foto sesudah tidak cocok dengan foto sebelum. Foto '
+              'ulang saluran yang sama, dari sudut yang mirip dengan foto '
+              'sebelum.'
         : 'Bersihkan bagian yang tersisa, lalu foto ulang dari sudut yang sama.';
 
     return ListView(
@@ -444,7 +455,11 @@ class _Hasil extends StatelessWidget {
                     shape: BoxShape.circle,
                   ),
                   child: Icon(
-                    bersih ? RIcons.centang : RIcons.peringatan,
+                    bersih
+                        ? RIcons.centang
+                        : tempatBerbeda
+                        ? RIcons.lokasi
+                        : RIcons.peringatan,
                     size: 40,
                     color: aksen.fg,
                   ),
@@ -517,6 +532,29 @@ class _Hasil extends StatelessWidget {
                   if (hasil.catatan.isNotEmpty) ...[
                     const SizedBox(height: Space.md),
                     Text(hasil.catatan, style: theme.textTheme.bodyLarge),
+                  ],
+                  if (tempatBerbeda &&
+                      (hasil.buktiTempat?.isNotEmpty ?? false)) ...[
+                    const SizedBox(height: Space.md),
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Icon(
+                          RIcons.lokasi,
+                          size: 18,
+                          color: scheme.onSurfaceVariant,
+                        ),
+                        const SizedBox(width: Space.sm),
+                        Expanded(
+                          child: Text(
+                            hasil.buktiTempat!,
+                            style: theme.textTheme.bodyMedium?.copyWith(
+                              color: scheme.onSurfaceVariant,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
                   ],
                   const SizedBox(height: Space.md),
                   KeyakinanAi(keyakinan: hasil.keyakinan),

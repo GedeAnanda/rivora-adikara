@@ -2,9 +2,22 @@
 // VITE_USE_MOCK=1 memakai tiruan di src/mocks, VITE_USE_MOCK=0 memanggil backend Express.
 import { mock, alatUji } from '../mocks/server'
 
-export const API_URL = (import.meta.env.VITE_API_URL ?? 'http://localhost:3000').replace(/\/$/, '')
-export const USE_MOCK = (import.meta.env.VITE_USE_MOCK ?? '1') === '1'
+// Build produksi (Vercel): bawaan memanggil backend asli. Mode tiruan hanya kalau VITE_USE_MOCK=1
+// diisi dengan sengaja, supaya juri tidak melihat data contoh karena env lupa diisi.
+const PRODUKSI = import.meta.env.PROD
+export const USE_MOCK = (import.meta.env.VITE_USE_MOCK ?? (PRODUKSI ? '0' : '1')) === '1'
+export const API_URL = (import.meta.env.VITE_API_URL ?? (PRODUKSI ? '' : 'http://localhost:3000')).replace(/\/$/, '')
 export const KELURAHAN_ID = import.meta.env.VITE_KELURAHAN_ID ?? '1'
+
+// Pesan galat konfigurasi yang jelas, bukan "Tidak terhubung ke server".
+function cekKonfigurasi() {
+  if (!API_URL) return 'Alamat server belum diatur. Isi VITE_API_URL lalu deploy ulang.'
+  if (typeof location !== 'undefined' && location.protocol === 'https:' && API_URL.startsWith('http:')) {
+    return 'Alamat server harus HTTPS (VITE_API_URL), halaman HTTPS tidak boleh memanggil HTTP.'
+  }
+  return null
+}
+const BATAS_TUNGGU_MS = 15000
 
 const KUNCI_TOKEN = 'rivora_token'
 
@@ -49,11 +62,20 @@ async function minta(path, { method = 'GET', body } = {}) {
   if (t) headers.Authorization = `Bearer ${t}`
   if (body !== undefined) headers['Content-Type'] = 'application/json'
 
+  const salahKonfigurasi = cekKonfigurasi()
+  if (salahKonfigurasi) throw new GalatApi(0, salahKonfigurasi)
+
   let res
   try {
-    res = await fetch(`${API_URL}${path}`, { method, headers, body: body !== undefined ? JSON.stringify(body) : undefined })
-  } catch {
-    throw new GalatApi(0, 'Tidak terhubung ke server')
+    res = await fetch(`${API_URL}${path}`, {
+      method,
+      headers,
+      body: body !== undefined ? JSON.stringify(body) : undefined,
+      // Tunnel yang menggantung tidak boleh membuat data diam-diam basi.
+      signal: AbortSignal.timeout(BATAS_TUNGGU_MS),
+    })
+  } catch (e) {
+    throw new GalatApi(0, e?.name === 'TimeoutError' ? 'Server terlalu lama merespons' : 'Tidak terhubung ke server')
   }
   if (res.status === 204) return null
   const data = await res.json().catch(() => null)

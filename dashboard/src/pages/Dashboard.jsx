@@ -123,7 +123,10 @@ export default function Dashboard({ onKeluar }) {
     setTugaskan(null)
     const nama = res?.tugas?.petugas?.nama ?? 'petugas'
     if (res?.notifikasi === 'terkirim') tampilkan(`Tugas dikirim ke ${nama}`, 'sukses')
-    else tampilkan('Tugas dibuat, tapi notifikasi tidak terkirim. Petugas tetap melihatnya di daftar tugas.', 'peringatan', 7000)
+    // Tanpa FCM / HP belum terdaftar bukan kegagalan: aplikasi petugas memeriksa tugas baru tiap 30 detik.
+    else if (res?.notifikasi === 'tanpa_token' || res?.notifikasi === 'nonaktif') {
+      tampilkan(`Tugas dikirim ke ${nama}. Muncul di aplikasi petugas dalam ±30 detik.`, 'sukses', 6000)
+    } else tampilkan('Tugas dibuat, tapi notifikasi tidak terkirim. Petugas tetap melihatnya di daftar tugas.', 'peringatan', 7000)
     await muatUlang()
   }
 

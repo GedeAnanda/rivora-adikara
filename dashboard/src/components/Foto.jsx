@@ -1,8 +1,23 @@
 import { useState } from 'react'
 import Ikon from './Ikon'
+import { API_URL } from '../api/client'
+
+// Foto unggahan lokal backend (/uploads/...) disimpan dengan alamat server saat itu (localhost atau
+// tunnel lama). Arahkan ke API_URL yang sedang dipakai. URL Supabase Storage tidak diubah.
+function alamatFoto(url) {
+  if (!url || !API_URL) return url
+  try {
+    const u = new URL(url)
+    if (u.pathname.startsWith('/uploads/')) return `${API_URL}${u.pathname}`
+  } catch {
+    /* bukan URL absolut */
+  }
+  return url
+}
 
 /** Foto saluran. Gagal dimuat -> placeholder (NFR-03). Klik foto -> perbesar. */
-export default function Foto({ url, alt, kecil, bisaPerbesar = true }) {
+export default function Foto({ url: urlAsli, alt, kecil, bisaPerbesar = true }) {
+  const url = alamatFoto(urlAsli)
   const [gagal, setGagal] = useState(false)
   const [besar, setBesar] = useState(false)
 
