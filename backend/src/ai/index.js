@@ -2,17 +2,21 @@
 //
 // analyzeReport / verifyCleaning memanggil Claude (Anthropic API) dengan keluaran JSON terstruktur,
 // lalu memvalidasinya (validasi.js). Batas 20 detik per panggilan, ulang 1 kali bila gagal.
-// Gagal dua kali: DEMO_MODE=1 -> hasil contoh bergiliran (sumber 'demo', FR-BE-19),
+// Laporan gagal dua kali: DEMO_MODE=1 -> hasil contoh bergiliran (sumber 'demo', FR-BE-19),
 // selain itu { ok: false, alasan } supaya backend menandai laporan cek_manual (FR-BE-06).
+// Verifikasi gagal selalu { ok: false }: tidak pernah memakai hasil contoh "bersih".
 //
 // Env: AI_API_KEY (kunci Anthropic), AI_MODEL (bawaan claude-opus-5-5), DEMO_MODE.
 
 const sdk = require('@anthropic-ai/sdk')
 const { validasiLaporan, validasiVerifikasi, JENIS, KELAS, PENYEBAB, KEYAKINAN } = require('./validasi')
-const { contohLaporan, contohVerifikasi } = require('./contoh')
+const { contohLaporan } = require('./contoh')
 
 const Anthropic = sdk.default ?? sdk
 const BATAS_MS = 20_000
+// Verifikasi membandingkan dua foto dengan penalaran lebih banyak; 2 × 25 detik masih di bawah
+// batas tunggu aplikasi mobile (60 detik).
+const BATAS_VERIFIKASI_MS = 25_000
 const PERCOBAAN = 2
 
 const SKEMA_LAPORAN = {
@@ -33,13 +37,15 @@ const SKEMA_LAPORAN = {
 const SKEMA_VERIFIKASI = {
   type: 'object',
   properties: {
+    tempat_sama: { type: 'boolean' },
+    bukti_tempat: { type: 'string' },
     sudah_bersih: { type: 'boolean' },
     kelas_sesudah: { type: 'string', enum: KELAS },
     skor_sumbatan_sesudah: { anyOf: [{ type: 'number' }, { type: 'null' }] },
     keyakinan: { type: 'string', enum: KEYAKINAN },
     catatan: { type: 'string' },
   },
-  required: ['sudah_bersih', 'kelas_sesudah', 'skor_sumbatan_sesudah', 'keyakinan', 'catatan'],
+  required: ['tempat_sama', 'bukti_tempat', 'sudah_bersih', 'kelas_sesudah', 'skor_sumbatan_sesudah', 'keyakinan', 'catatan'],
   additionalProperties: false,
 }
 
@@ -62,9 +68,19 @@ Nilai hanya dari yang terlihat. Jangan menebak isi bagian yang tidak tampak.`
 
 const PROMPT_VERIFIKASI = `Kamu memverifikasi pembersihan saluran drainase untuk aplikasi RIVORA.
 Gambar pertama adalah foto SEBELUM dibersihkan, gambar kedua foto SESUDAH dibersihkan oleh petugas.
-Nilai kondisi pada foto SESUDAH. Pastikan kedua foto memperlihatkan saluran yang sama; bila jelas berbeda tempat, sudah_bersih false dan jelaskan di catatan.
-sudah_bersih true hanya bila kelas_sesudah bersih atau ringan.
-Isi kelas_sesudah dan skor_sumbatan_sesudah dengan skala berikut (nilai foto SESUDAH).
+Petugas bisa saja memotret selokan lain yang sudah bersih. Tugas pertamamu memastikan keduanya saluran yang SAMA.
+
+Langkah 1, tempat_sama:
+- Bandingkan penanda yang tidak berubah saat dibersihkan: bentuk dan lebar saluran, bahan dan pola dinding atau
+  tepi (bata, beton, retakan, noda), tutup atau kisi, pipa yang masuk, tiang, pagar, tembok, pohon, trotoar, jalan, bangunan.
+- Sampah, air, dan endapan BOLEH berbeda (itu yang dibersihkan), jadi jangan dipakai sebagai bukti tempat.
+- tempat_sama true hanya bila minimal dua penanda tetap cocok. Bila penanda berbeda, atau tidak cukup penanda
+  untuk memastikan, tempat_sama false. Lebih baik menolak daripada meloloskan selokan lain.
+- bukti_tempat: satu kalimat, sebut penanda yang cocok atau yang berbeda.
+
+Langkah 2, nilai kondisi pada foto SESUDAH dengan skala di bawah.
+sudah_bersih true hanya bila tempat_sama true DAN kelas_sesudah bersih atau ringan.
+Bila tempat_sama false, catatan menjelaskan bahwa foto sesudah tampak di tempat yang berbeda.
 
 ${SKALA}`
 
@@ -76,19 +92,25 @@ function ambilKlien() {
   return klien
 }
 
+const PANGGILAN_LAPOR = { effort: 'low', timeout: BATAS_MS }
+const PANGGILAN_VERIFIKASI = { effort: 'medium', timeout: BATAS_VERIFIKASI_MS }
+
 const gambar = (buf, mimeType) => ({
   type: 'image',
   source: { type: 'base64', media_type: mimeType || 'image/jpeg', data: buf.toString('base64') },
 })
 
 /** Satu panggilan model + validasi. Melempar Error bila gagal supaya bisa diulang. */
-async function panggil(isi, skema, validasi) {
-  const res = await ambilKlien().messages.create({
-    model: process.env.AI_MODEL || 'claude-opus-5-5',
-    max_tokens: 4000,
-    output_config: { effort: 'low', format: { type: 'json_schema', schema: skema } },
-    messages: [{ role: 'user', content: isi }],
-  })
+async function panggil(isi, skema, validasi, { effort, timeout }) {
+  const res = await ambilKlien().messages.create(
+    {
+      model: process.env.AI_MODEL || 'claude-opus-5-5',
+      max_tokens: 4000,
+      output_config: { effort, format: { type: 'json_schema', schema: skema } },
+      messages: [{ role: 'user', content: isi }],
+    },
+    { timeout }
+  )
   if (res.stop_reason === 'refusal') throw new Error(`model menolak (${res.stop_details?.category ?? 'tanpa kategori'})`)
   if (res.stop_reason === 'max_tokens') throw new Error('keluaran terpotong (max_tokens)')
   const teks = res.content.find((b) => b.type === 'text')?.text
@@ -104,13 +126,14 @@ async function panggil(isi, skema, validasi) {
   return v.result
 }
 
-async function jalankan(nama, isi, skema, validasi, contoh) {
+// contoh = null → tidak ada hasil contoh walau DEMO_MODE (verifikasi: gagal tetap gagal).
+async function jalankan(nama, isi, skema, validasi, contoh, opsi = PANGGILAN_LAPOR) {
   const mulai = Date.now()
   let alasan = 'AI_API_KEY belum diisi'
   if (ambilKlien()) {
     for (let i = 1; i <= PERCOBAAN; i++) {
       try {
-        const result = await panggil(isi, skema, validasi)
+        const result = await panggil(isi, skema, validasi, opsi)
         console.log(`[ai] ${nama} sumber=model percobaan=${i} durasi=${Date.now() - mulai}ms`)
         return { ok: true, sumber: 'model', result }
       } catch (e) {
@@ -119,7 +142,7 @@ async function jalankan(nama, isi, skema, validasi, contoh) {
       }
     }
   }
-  if (process.env.DEMO_MODE === '1') {
+  if (contoh && process.env.DEMO_MODE === '1') {
     console.log(`[ai] ${nama} sumber=demo (${alasan}) durasi=${Date.now() - mulai}ms`)
     return { ok: true, sumber: 'demo', result: contoh() }
   }
@@ -150,7 +173,8 @@ async function verifyCleaning({ fotoSebelum, fotoSesudah, mimeType }) {
     gambar(fotoSesudah, mimeType),
     { type: 'text', text: PROMPT_VERIFIKASI },
   ]
-  return jalankan('verifyCleaning', isi, SKEMA_VERIFIKASI, validasiVerifikasi, contohVerifikasi)
+  // Tanpa hasil contoh: verifikasi yang tidak dinilai AI tidak boleh lolos sebagai "bersih".
+  return jalankan('verifyCleaning', isi, SKEMA_VERIFIKASI, validasiVerifikasi, null, PANGGILAN_VERIFIKASI)
 }
 
 module.exports = { analyzeReport, verifyCleaning, _klien: null }

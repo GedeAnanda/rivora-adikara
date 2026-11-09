@@ -70,6 +70,9 @@ function validasiVerifikasi(data) {
   const { sudah_bersih, kelas_sesudah, skor_sumbatan_sesudah: skor, keyakinan, catatan } = data
 
   if (typeof sudah_bersih !== 'boolean') return { ok: false, alasan: 'sudah_bersih harus boolean' }
+  if (typeof data.tempat_sama !== 'boolean') return { ok: false, alasan: 'tempat_sama harus boolean' }
+  const tempat_sama = data.tempat_sama
+  const bukti_tempat = typeof data.bukti_tempat === 'string' ? data.bukti_tempat.trim() : ''
   if (!KELAS.includes(kelas_sesudah)) return { ok: false, alasan: `kelas_sesudah tidak dikenal: ${kelas_sesudah}` }
   if (!KEYAKINAN.includes(keyakinan)) return { ok: false, alasan: `keyakinan tidak dikenal: ${keyakinan}` }
 
@@ -77,7 +80,10 @@ function validasiVerifikasi(data) {
     // Foto sesudah tidak bisa dinilai: tidak boleh dianggap bersih
     return {
       ok: true,
-      result: { sudah_bersih: false, kelas_sesudah, skor_sumbatan_sesudah: null, keyakinan, catatan: catatan?.trim() ?? '' },
+      result: {
+        tempat_sama, bukti_tempat,
+        sudah_bersih: false, kelas_sesudah, skor_sumbatan_sesudah: null, keyakinan, catatan: catatan?.trim() ?? '',
+      },
     }
   }
   if (typeof skor !== 'number' || Number.isNaN(skor)) return { ok: false, alasan: 'skor_sumbatan_sesudah bukan angka' }
@@ -93,7 +99,10 @@ function validasiVerifikasi(data) {
   return {
     ok: true,
     result: {
-      sudah_bersih,
+      tempat_sama,
+      bukti_tempat,
+      // Selokan lain yang bersih tidak boleh menyelesaikan tugas.
+      sudah_bersih: sudah_bersih && tempat_sama,
       kelas_sesudah,
       skor_sumbatan_sesudah: Math.round(skor * 100) / 100,
       keyakinan,

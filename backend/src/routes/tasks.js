@@ -8,7 +8,7 @@ const { httpError, ambilId } = require('../errors');
 const { wajibLogin } = require('../auth');
 const { cariTugas } = require('../tugas');
 const { kirimTugasBaru } = require('../notify/fcm');
-const { lokasiDemoDiminta, cadanganDemo } = require('../demo');
+const { lokasiDemoDiminta, petaLokasiDemo, cadanganDemo } = require('../demo');
 const { terimaFoto, cekLokasiWaktu, UPLOAD_DIR } = require('./reports');
 
 const router = express.Router();
@@ -175,8 +175,9 @@ function dariHasilVerifikasi(hasil) {
     ai_sumber: hasil.sumber === 'demo' ? 'demo' : 'model',
     ai_json: r,
     verifikasi: {
-      // tidak_terlihat tidak pernah dianggap bersih
-      sudah_bersih: kelas !== 'tidak_terlihat' && r.sudah_bersih === true,
+      // tidak_terlihat tidak pernah dianggap bersih; selokan lain (tempat_sama false) juga tidak
+      sudah_bersih: kelas !== 'tidak_terlihat' && r.sudah_bersih === true && r.tempat_sama !== false,
+      tempat_sama: r.tempat_sama !== false,
       kelas_sesudah: kelas,
       skor_sumbatan_sesudah: skor,
       keyakinan: KEYAKINAN.includes(r.keyakinan) ? r.keyakinan : 'rendah',
@@ -198,21 +199,33 @@ router.post('/:id/verify', wajibLogin('petugas'), terimaFoto, async (req, res) =
 
   const lat = Number(req.body.lat);
   const lng = Number(req.body.lng);
+  // [DEMO] DEMO_ASAL diisi → posisi HP digeser ke wilayah demo, lalu diukur ke saluran seperti biasa.
+  const lokasiDemo = lokasiDemoDiminta(req.body);
+  const peta = lokasiDemo ? await petaLokasiDemo({ lat, lng }) : null;
+  const titik = peta ?? { lat, lng };
   const { rows } = await db.query(
     `SELECT t.id, t.status, t.petugas_id, t.laporan_id, t.saluran_id, s.jenis, l.foto_url AS foto_sebelum,
-       ST_Distance(s.geom, ST_SetSRID(ST_MakePoint($2, $3), 4326)::geography) AS jarak_m
+       l.lokasi_demo AS sebelum_lokasi_demo,
+       ST_Distance(s.geom, ST_SetSRID(ST_MakePoint($2, $3), 4326)::geography) AS jarak_m,
+       ST_Distance(l.geom, ST_SetSRID(ST_MakePoint($4, $5), 4326)::geography) AS jarak_asli_m
      FROM tugas t JOIN saluran s ON s.id = t.saluran_id JOIN laporan l ON l.id = t.laporan_id
      WHERE t.id = $1`,
-    [id, lng, lat]
+    [id, titik.lng, titik.lat, lng, lat]
   );
   const t = rows[0];
   if (!t) await tolak(404, 'Tugas tidak ditemukan');
   if (t.petugas_id !== req.user.id) await tolak(403, 'Tugas ini bukan milikmu');
   if (t.status === 'selesai') await tolak(409, 'Tugas ini sudah selesai');
 
-  const lokasiDemo = lokasiDemoDiminta(req.body);
-  if (!lokasiDemo && t.jarak_m > RADIUS_VERIFIKASI_M) {
-    await tolak(400, `Kamu berjarak ${Math.round(t.jarak_m)} m dari saluran. Dekati saluran (maks ${RADIUS_VERIFIKASI_M} m) lalu foto ulang`);
+  // Jarak yang dipakai untuk radius 30 m:
+  // - biasa, atau demo dengan DEMO_ASAL: posisi (yang sudah digeser) ke saluran;
+  // - demo tanpa DEMO_ASAL, foto sebelum juga lokasi_demo: posisi asli HP ke posisi asli foto sebelum
+  //   (selokan lain di tempat berbeda tetap ditolak);
+  // - demo tanpa DEMO_ASAL untuk data contoh seed (foto sebelum bukan dari HP): dilewati.
+  let jarak = t.jarak_m;
+  if (lokasiDemo && !peta) jarak = t.sebelum_lokasi_demo ? t.jarak_asli_m : null;
+  if (jarak != null && jarak > RADIUS_VERIFIKASI_M) {
+    await tolak(400, `Kamu berjarak ${Math.round(jarak)} m dari saluran. Dekati saluran (maks ${RADIUS_VERIFIKASI_M} m) lalu foto ulang`);
   }
 
   // AI + unggah foto di luar transaksi (lambat, jangan tahan kunci baris)

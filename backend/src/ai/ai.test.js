@@ -54,11 +54,40 @@ test('gagal dua kali + DEMO_MODE=1 -> hasil contoh sumber demo', async () => {
   delete process.env.DEMO_MODE
 })
 
+const verifikasiOk = {
+  tempat_sama: true, bukti_tempat: 'Dinding bata dan pipa di kiri sama', sudah_bersih: true,
+  kelas_sesudah: 'bersih', skor_sumbatan_sesudah: 0.08, keyakinan: 'tinggi', catatan: 'Bersih',
+}
+
 test('verifikasi valid -> sumber model', async () => {
-  const v = { sudah_bersih: true, kelas_sesudah: 'bersih', skor_sumbatan_sesudah: 0.08, keyakinan: 'tinggi', catatan: 'Bersih' }
-  ai._klien = tiruan([v])
+  ai._klien = tiruan([verifikasiOk])
   const r = await ai.verifyCleaning({ fotoSebelum: foto, fotoSesudah: foto, mimeType: 'image/jpeg' })
-  assert.deepStrictEqual(r, { ok: true, sumber: 'model', result: v })
+  assert.deepStrictEqual(r, { ok: true, sumber: 'model', result: verifikasiOk })
+})
+
+test('verifikasi: selokan lain yang bersih (tempat_sama false) -> tidak bersih', async () => {
+  ai._klien = tiruan([{ ...verifikasiOk, tempat_sama: false, bukti_tempat: 'Dinding beton, sebelumnya bata' }])
+  const r = await ai.verifyCleaning({ fotoSebelum: foto, fotoSesudah: foto, mimeType: 'image/jpeg' })
+  assert.strictEqual(r.ok, true)
+  assert.strictEqual(r.result.tempat_sama, false)
+  assert.strictEqual(r.result.sudah_bersih, false)
+})
+
+test('verifikasi: tanpa field tempat_sama -> ditolak validasi (diulang lalu gagal)', async () => {
+  delete process.env.DEMO_MODE
+  const { tempat_sama, ...tanpa } = verifikasiOk
+  ai._klien = tiruan([tanpa])
+  const r = await ai.verifyCleaning({ fotoSebelum: foto, fotoSesudah: foto, mimeType: 'image/jpeg' })
+  assert.strictEqual(r.ok, false)
+  assert.match(r.alasan, /tempat_sama/)
+})
+
+test('verifikasi gagal + DEMO_MODE=1 -> tetap gagal, TIDAK memakai contoh bersih', async () => {
+  process.env.DEMO_MODE = '1'
+  ai._klien = tiruan([new Error('timeout')])
+  const r = await ai.verifyCleaning({ fotoSebelum: foto, fotoSesudah: foto, mimeType: 'image/jpeg' })
+  assert.strictEqual(r.ok, false)
+  delete process.env.DEMO_MODE
 })
 
 test('tanpa AI_API_KEY dan tanpa DEMO_MODE -> ok false', async () => {
