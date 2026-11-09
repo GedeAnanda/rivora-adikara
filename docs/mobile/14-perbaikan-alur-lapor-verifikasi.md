@@ -84,7 +84,17 @@ Kalau AI menilai foto sesudah bersih tapi **tempatnya berbeda**, layar verifikas
 | 6 | Tanpa `DEMO_ASAL` (perilaku lama): verifikasi dari 158 m | **Ditolak 400** (dulu lolos) |
 | 7 | Dasbor | Prioritas 7 saluran tanpa yang bersih; Cek langsung menampilkan "Ditugaskan ke Petugas 1" tanpa tombol Tugaskan; riwayat menampilkan "Verifikasi ditolak" |
 
-Penilaian `tempat_sama` oleh AI asli **belum diuji dengan foto selokan asli**, karena server uji sengaja tanpa kunci AI. Uji di lapangan: lapor selokan kotor, lalu verifikasi memakai foto selokan lain yang bersih (dalam 30 m) → harus "Foto sesudah di tempat berbeda".
+### Uji dengan AI asli (`claude-sonnet-5-5`, backend lokal + PostGIS Docker)
+
+| Uji | Hasil |
+|---|---|
+| Lapor foto saluran contoh (`backend/assets/contoh.jpg`) | `ai_sumber: model`, bersih 0,05, ±4 detik |
+| Verifikasi dengan foto yang sama | `tempat_sama: true`, `sudah_bersih: true`, tugas **selesai**, ±4 detik |
+| Lapor `contoh-saluran/berat-1.jpg` (selokan penuh sampah di pinggir jalan), verifikasi dengan `bersih-1.jpg` (kanal bersih di bawah jembatan) dari titik GPS yang sama | `tempat_sama: false`, `sudah_bersih: false`, tugas tetap **dikerjakan**. Catatan AI: "Foto sesudah tampak di tempat yang berbeda dari foto sebelum, sehingga pembersihan tidak dapat diverifikasi meskipun saluran pada foto sesudah terlihat bersih dengan air mengalir lancar." |
+
+Selama uji, satu laporan sempat mendapat "Connection error" dua kali beruntun dalam setengah detik (gangguan jaringan sesaat; diulang langsung berhasil). Sekarang ada jeda 1 detik sebelum percobaan ulang ke AI (`ai/index.js`).
+
+Belum diuji: foto sebelum (kotor) dan sesudah (sudah dibersihkan) dari selokan **yang sama** di lapangan. Lakukan saat gladi resik sebelum rekam video.
 
 Database uji: kontainer Docker `rivora-uji` (PostGIS 17, port 55432), bukan database Supabase tim. `db/schema.sql` menghapus semua tabel, jadi **jangan pernah** dijalankan ke database tim.
 

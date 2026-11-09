@@ -2,6 +2,7 @@
 const test = require('node:test')
 const assert = require('node:assert')
 const ai = require('./index')
+ai._jedaUlangMs = 0 // tanpa jeda ulang di tes
 
 const foto = Buffer.from('bukan-gambar-asli')
 const laporanOk = {

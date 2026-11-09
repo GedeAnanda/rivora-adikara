@@ -132,6 +132,8 @@ async function jalankan(nama, isi, skema, validasi, contoh, opsi = PANGGILAN_LAP
   let alasan = 'AI_API_KEY belum diisi'
   if (ambilKlien()) {
     for (let i = 1; i <= PERCOBAAN; i++) {
+      // Gangguan jaringan sesaat ("Connection error") sering gagal lagi kalau langsung diulang.
+      if (i > 1) await new Promise((r) => setTimeout(r, module.exports._jedaUlangMs ?? 1000))
       try {
         const result = await panggil(isi, skema, validasi, opsi)
         console.log(`[ai] ${nama} sumber=model percobaan=${i} durasi=${Date.now() - mulai}ms`)
@@ -177,4 +179,4 @@ async function verifyCleaning({ fotoSebelum, fotoSesudah, mimeType }) {
   return jalankan('verifyCleaning', isi, SKEMA_VERIFIKASI, validasiVerifikasi, null, PANGGILAN_VERIFIKASI)
 }
 
-module.exports = { analyzeReport, verifyCleaning, _klien: null }
+module.exports = { analyzeReport, verifyCleaning, _klien: null, _jedaUlangMs: undefined }
