@@ -155,8 +155,10 @@ async function hitungPrioritas(kelurahanId) {
   const [hujan, saluran] = await Promise.all([getHujan24j(kelurahanId), daftarSaluran(kelurahanId)]);
   const h = skorH(hujan.mm_24j);
 
+  // Sama dengan kontrak dasbor (mocks/server.js): saluran yang kondisi terkininya bersih tidak perlu
+  // dibersihkan, dan saluran yang perlu dicek langsung hanya muncul di daftar cek manual.
   const prioritas = saluran
-    .filter((x) => x.kondisi)
+    .filter((x) => x.kondisi && x.kondisi.kelas !== 'bersih' && !x.perlu_cek_manual)
     .map((x) => ({
       saluran_id: x.saluran_id, jenis: x.jenis, rw_id: x.rw_id, rw_nama: x.rw_nama,
       lat: x.lat, lng: x.lng,
@@ -175,6 +177,8 @@ async function hitungPrioritas(kelurahanId) {
       saluran_id: x.saluran_id, jenis: x.jenis, rw_nama: x.rw_nama,
       foto_url: x.terakhir.foto_url, captured_at: x.terakhir.captured_at,
       catatan: x.terakhir.catatan || 'Kondisi saluran tidak dapat dinilai AI',
+      // Dasbor menyembunyikan tombol Tugaskan bila saluran sudah punya tugas aktif (hindari 409).
+      tugas_aktif: x.tugas_aktif,
     }));
 
   return { hujan, prioritas, cekManual };

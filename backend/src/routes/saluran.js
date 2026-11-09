@@ -44,7 +44,14 @@ router.get('/:id', async (req, res) => {
   const [riwayat, tugas] = await Promise.all([
     db.query(
       `SELECT id AS laporan_id, sumber, kelas, skor_sumbatan, keyakinan, foto_url, captured_at,
-         status, ai_sumber, lokasi_demo, ai_json->>'catatan' AS catatan
+         status, ai_sumber, lokasi_demo, ai_json->>'catatan' AS catatan,
+         COALESCE(ai_json->'penyebab', '[]'::jsonb) AS penyebab,
+         -- Laporan verifikasi: lolos bila AI menilai bersih/ringan di saluran yang sama.
+         CASE WHEN sumber = 'verifikasi' THEN
+           ai_sumber <> 'gagal' AND kelas IN ('bersih', 'ringan')
+           AND COALESCE(ai_json->>'sudah_bersih', 'false') = 'true'
+           AND COALESCE(ai_json->>'tempat_sama', 'true') <> 'false'
+         END AS lolos_verifikasi
        FROM laporan WHERE saluran_id = $1 ORDER BY captured_at DESC, id DESC`,
       [id]
     ),
