@@ -657,6 +657,10 @@ section + section .judul-grup {
   background: #E3F3EA;
   color: #17663F;
 }
+.label-bukti.ditolak {
+  background: #FBE7E5;
+  color: #A51C14;
+}
 
 /* ---------- Panel detail ---------- */
 .panel-detail {
