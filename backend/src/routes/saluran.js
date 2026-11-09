@@ -11,7 +11,9 @@ const router = express.Router();
 router.get('/', async (req, res) => {
   const kelurahanId = ambilKelurahanId(req);
   await ambilKelurahan(kelurahanId);
-  const saluran = await daftarSaluran(kelurahanId);
+  // Saluran tanpa laporan sama sekali (mis. jangkar DEMO_SALURAN_ID setelah data dikosongkan)
+  // tidak punya kondisi apa pun, jadi tidak digambar di peta.
+  const saluran = (await daftarSaluran(kelurahanId)).filter((x) => x.terakhir);
   res.json({
     type: 'FeatureCollection',
     features: saluran.map((x) => ({
